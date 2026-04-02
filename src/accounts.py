@@ -4,7 +4,8 @@ from enums import AccountStatus, Currency
 from exceptions import (
     AccountFrozenError,
     AccountClosedError,
-    InvalidOperationError
+    InvalidOperationError,
+    InsufficientFundsError
 )
 
 class AbstractAccount(ABC):
@@ -83,3 +84,21 @@ class BankAccount(AbstractAccount):
 
         if amount <= 0:
             raise InvalidOperationError("Сумма должна быть больше нуля")
+
+    def deposit(self, amount: float):
+        self._check_account_status()
+        self._validate_amount(amount)
+
+        self._balance += amount
+
+    def withdraw(self, amount: float):
+        self._check_account_status()
+        self._validate_amount(amount)
+
+        if amount > self._balance:
+            raise InsufficientFundsError("Недостаточно средств на счете")
+
+        self._balance -= amount
+
+
+
