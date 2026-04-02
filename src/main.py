@@ -1,50 +1,72 @@
-from accounts import BankAccount
-from enums import AccountStatus, Currency
-from exceptions import AccountFrozenError
+from account_types import SavingsAccount, PremiumAccount, InvestmentAccount
+from enums import Currency
+from exceptions import InsufficientFundsError
 
 
 def main():
-    # Создаем активный счет
-    active_account = BankAccount(
+    print("===== SAVINGS ACCOUNT =====")
+    savings = SavingsAccount(
         owner="Dias",
-        balance=1000,
-        currency=Currency.USD
-    )
-
-    print("Активный счет создан:")
-    print(active_account)
-    print()
-
-    # Пополнение счета
-    active_account.deposit(500)
-    print("После пополнения:")
-    print(active_account)
-    print()
-
-    # Снятие денег
-    active_account.withdraw(300)
-    print("После снятия:")
-    print(active_account)
-    print()
-
-    # Создаем замороженный счет
-    frozen_account = BankAccount(
-        owner="Alex",
         balance=2000,
-        status=AccountStatus.FROZEN,
-        currency=Currency.EUR
+        currency=Currency.USD,
+        min_balance=500,
+        interest_rate=0.02
     )
+    print(savings)
+    print("Информация:", savings.get_account_info())
 
-    print("Замороженный счет создан:")
-    print(frozen_account)
+    savings.apply_monthly_interest()
+    print("После начисления процентов:")
+    print(savings)
+
+    try:
+        savings.withdraw(1700)
+    except InsufficientFundsError as e:
+        print("Ошибка снятия:", e)
+
+    savings.withdraw(1000)
+    print("После допустимого снятия:")
+    print(savings)
     print()
 
-    # Попытка операции с замороженным счетом
-    try:
-        frozen_account.deposit(100)
-    except AccountFrozenError as e:
-        print("Ошибка операции:")
-        print(e)
+    print("===== PREMIUM ACCOUNT =====")
+    premium = PremiumAccount(
+        owner="Alex",
+        balance=300,
+        currency=Currency.EUR,
+        overdraft_limit=1000,
+        transaction_fee=15
+    )
+    print(premium)
+    print("Информация:", premium.get_account_info())
+
+    premium.withdraw(500)
+    print("После снятия с овердрафтом:")
+    print(premium)
+
+    premium.deposit(200)
+    print("После пополнения:")
+    print(premium)
+    print()
+
+    print("===== INVESTMENT ACCOUNT =====")
+    investment = InvestmentAccount(
+        owner="Maria",
+        balance=1500,
+        portfolio={
+            "stocks": 5000,
+            "bonds": 2000,
+            "etf": 3000
+        }
+    )
+    print(investment)
+    print("Информация:", investment.get_account_info())
+    print("Прогноз роста портфеля на год:")
+    print(investment.project_yearly_growth())
+
+    investment.withdraw(500)
+    print("После снятия денег с денежного баланса:")
+    print(investment)
 
 
 if __name__ == "__main__":
