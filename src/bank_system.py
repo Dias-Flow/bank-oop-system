@@ -158,13 +158,20 @@ class Bank:
 
         return total
 
-    def get_total_balance(self):
-        total = 0.0
+    def get_clients_ranking(self):
+        ranking = []
 
-        for account in self.accounts.values():
-            total += account._balance
+        for client in self.clients.values():
+            total_balance = 0.0
 
-        return total
+            for account_id in client.get_accounts():
+                if account_id in self.accounts:
+                    total_balance += self.accounts[account_id]._balance
+
+            ranking.append((client.full_name, total_balance))
+
+        ranking.sort(key=lambda item: item[1], reverse=True)
+        return ranking
 
     def _check_operation_time(self):
         current_hour = datetime.now().hour
