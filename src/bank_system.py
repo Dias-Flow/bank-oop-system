@@ -3,6 +3,7 @@ from uuid import uuid4
 from accounts import BankAccount
 from account_types import SavingsAccount, PremiumAccount, InvestmentAccount
 from enums import AccountStatus
+from datetime import datetime
 
 
 class Client:
@@ -148,3 +149,29 @@ class Bank:
             for account_id in client.get_accounts()
             if account_id in self.accounts
         ]
+
+    def get_total_balance(self):
+        total = 0.0
+
+        for account in self.accounts.values():
+            total += account._balance
+
+        return total
+
+    def get_total_balance(self):
+        total = 0.0
+
+        for account in self.accounts.values():
+            total += account._balance
+
+        return total
+
+    def _check_operation_time(self):
+        current_hour = datetime.now().hour
+
+        if 0 <= current_hour < 5:
+            self.suspicious_actions.append(
+                "Попытка выполнить операцию в запрещенное ночное время"
+            )
+            raise ValueError("Операции запрещены с 00:00 до 05:00")
+
