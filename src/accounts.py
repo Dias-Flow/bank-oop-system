@@ -100,5 +100,10 @@ class BankAccount(AbstractAccount):
 
         self._balance -= amount
 
-
+    def __str__(self):
+        last_four = self.account_id[-4:]
+        return (
+            f"BankAccount | {self.owner} | ****{last_four} | "
+            f"{self.status.value} | {self._balance:.2f} {self.currency.value}"
+        )
 
