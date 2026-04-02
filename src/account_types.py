@@ -171,3 +171,14 @@ class InvestmentAccount(BankAccount):
             f"{self.status.value} | {self._balance:.2f} {self.currency.value} | "
             f"portfolio={portfolio_total:.2f}"
         )
+
+    def withdraw(self, amount: float):
+        self._check_account_status()
+        self._validate_amount(amount)
+
+        if amount > self._balance:
+            raise InsufficientFundsError(
+                "Недостаточно денежных средств на инвестиционном счете"
+            )
+
+        self._balance -= amount
