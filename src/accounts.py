@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from uuid import uuid4
 from enums import AccountStatus, Currency
-
+from exceptions import (
+    AccountFrozenError,
+    AccountClosedError,
+    InvalidOperationError
+)
 
 class AbstractAccount(ABC):
     def __init__(self, account_id: str, owner: str, balance: float, status: AccountStatus):
@@ -66,3 +70,16 @@ class BankAccount(AbstractAccount):
             "status": self.status.value,
             "currency": self.currency.value
         }
+    def _check_account_status(self):
+        if self.status == AccountStatus.FROZEN:
+            raise AccountFrozenError("Счет заморожен. Операции запрещены.")
+
+        if self.status == AccountStatus.CLOSED:
+            raise AccountClosedError("Счет закрыт. Операции невозможны.")
+
+    def _validate_amount(self, amount: float):
+        if not isinstance(amount, (int, float)):
+            raise InvalidOperationError("Сумма должна быть числом")
+
+        if amount <= 0:
+            raise InvalidOperationError("Сумма должна быть больше нуля")
