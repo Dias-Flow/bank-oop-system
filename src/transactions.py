@@ -1,7 +1,8 @@
 from datetime import datetime
 from uuid import uuid4
 
-from enums import Currency, TransactionType, TransactionStatus, AccountStatus
+from enums import Currency, TransactionType, TransactionStatus, AccountStatus, AuditLevel, RiskLevel
+from audit import AuditLog, RiskAnalyzer
 
 
 class Transaction:
@@ -115,14 +116,46 @@ class TransactionQueue:
         return None
 
 class TransactionProcessor:
-    def __init__(self, bank):
+
+    def __init__(self, bank, audit_log=None, risk_analyzer=None):
         self.bank = bank
         self.retry_limit = 3
         self.failed_transactions = []
+        self.audit_log = audit_log if audit_log is not None else AuditLog()
+        self.risk_analyzer = risk_analyzer if risk_analyzer is not None else RiskAnalyzer()
 
     def process_transaction(self, transaction: Transaction):
         try:
             transaction.mark_processing()
+
+            risk_result = self.risk_analyzer.analyze_transaction(transaction)
+            risk_level = risk_result["risk_level"]
+            risk_reasons = risk_result["reasons"]
+
+            self.audit_log.log_event(
+                AuditLevel.INFO,
+                f"Начата обработка транзакции {transaction.transaction_id} "
+                f"с уровнем риска {risk_level.value}"
+            )
+
+            if risk_level == RiskLevel.HIGH:
+                reason_text = ", ".join(risk_reasons) if risk_reasons else "Высокий уровень риска"
+                transaction.mark_failed(f"Операция заблокирована из-за высокого риска: {reason_text}")
+                self.failed_transactions.append(transaction)
+
+                self.audit_log.log_event(
+                    AuditLevel.CRITICAL,
+                    f"Транзакция {transaction.transaction_id} заблокирована. Причины: {reason_text}"
+                )
+
+                return transaction
+
+            if risk_level == RiskLevel.MEDIUM:
+                self.audit_log.log_event(
+                    AuditLevel.WARNING,
+                    f"Подозрительная транзакция {transaction.transaction_id}. "
+                    f"Причины: {', '.join(risk_reasons)}"
+                )
 
             if transaction.transaction_type != TransactionType.TRANSFER:
                 raise ValueError("Сейчас поддерживаются только переводы")
@@ -137,7 +170,6 @@ class TransactionProcessor:
                 raise ValueError("Переводы с замороженными счетами запрещены")
 
             transaction.fee = self.calculate_fee(transaction)
-
             total_amount = transaction.amount + transaction.fee
 
             if sender.__class__.__name__ != "PremiumAccount" and sender._balance < total_amount:
@@ -154,12 +186,25 @@ class TransactionProcessor:
             receiver.deposit(received_amount)
 
             transaction.mark_completed()
+
+            self.audit_log.log_event(
+                AuditLevel.INFO,
+                f"Транзакция {transaction.transaction_id} успешно выполнена"
+            )
+
             return transaction
 
         except Exception as error:
             transaction.mark_failed(str(error))
+
             if transaction not in self.failed_transactions:
                 self.failed_transactions.append(transaction)
+
+            self.audit_log.log_event(
+                AuditLevel.CRITICAL,
+                f"Ошибка транзакции {transaction.transaction_id}: {str(error)}"
+            )
+
             return transaction
 
 
