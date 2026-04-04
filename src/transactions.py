@@ -252,3 +252,12 @@ class TransactionProcessor:
             self.failed_transactions.append(transaction)
 
         return transaction
+
+    def get_error_statistics(self):
+        stats = {}
+
+        for transaction in self.failed_transactions:
+            reason = transaction.failure_reason or "Неизвестная ошибка"
+            stats[reason] = stats.get(reason, 0) + 1
+
+        return stats

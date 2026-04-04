@@ -36,6 +36,7 @@ class RiskAnalyzer:
     def __init__(self):
         self.transaction_history = []
         self.known_receivers = {}
+        self.suspicious_transactions = []
 
     def analyze_transaction(self, transaction):
         risk_score = 0
@@ -87,8 +88,44 @@ class RiskAnalyzer:
 
         self.transaction_history.append(transaction)
 
+        if risk_level in (RiskLevel.MEDIUM, RiskLevel.HIGH):
+            self.suspicious_transactions.append({
+                "transaction": transaction,
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "reasons": reasons
+            })
+
         return {
             "risk_level": risk_level,
             "risk_score": risk_score,
             "reasons": reasons
+        }
+
+    def get_suspicious_operations_report(self):
+        return self.suspicious_transactions
+
+    def get_client_risk_profile(self, client_full_name: str):
+        client_operations = [
+            item for item in self.suspicious_transactions
+            if item["transaction"].sender
+            and item["transaction"].sender.owner == client_full_name
+        ]
+
+        high_count = sum(1 for item in client_operations if item["risk_level"] == RiskLevel.HIGH)
+        medium_count = sum(1 for item in client_operations if item["risk_level"] == RiskLevel.MEDIUM)
+
+        if high_count >= 2:
+            profile = "high"
+        elif high_count >= 1 or medium_count >= 2:
+            profile = "medium"
+        else:
+            profile = "low"
+
+        return {
+            "client": client_full_name,
+            "profile": profile,
+            "high_risk_count": high_count,
+            "medium_risk_count": medium_count,
+            "total_suspicious": len(client_operations)
         }
