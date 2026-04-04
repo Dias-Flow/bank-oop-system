@@ -1,10 +1,11 @@
 from datetime import datetime
 from uuid import uuid4
 
-from enums import Currency, TransactionType, TransactionStatus
+from enums import Currency, TransactionType, TransactionStatus, AccountStatus
 
 
 class Transaction:
+
     def __init__(
         self,
         transaction_type: TransactionType,
@@ -71,3 +72,138 @@ class Transaction:
             f"sender: {sender_id} | receiver: {receiver_id} | "
             f"status: {self.status.value}"
         )
+
+class TransactionQueue:
+    def __init__(self):
+        self.priority_queue = []
+        self.regular_queue = []
+        self.delayed_queue = []
+
+    def add_transaction(
+        self,
+        transaction: Transaction,
+        priority: bool = False,
+        delayed: bool = False
+    ):
+        if not isinstance(transaction, Transaction):
+            raise ValueError("Можно добавлять только объект Transaction")
+
+        if delayed:
+            self.delayed_queue.append(transaction)
+        elif priority:
+            self.priority_queue.append(transaction)
+        else:
+            self.regular_queue.append(transaction)
+
+    def get_next_transaction(self):
+        if self.priority_queue:
+            return self.priority_queue.pop(0)
+
+        if self.regular_queue:
+            return self.regular_queue.pop(0)
+
+        return None
+
+    def cancel_transaction(self, transaction_id: str):
+        for queue in [self.priority_queue, self.regular_queue, self.delayed_queue]:
+            for transaction in queue:
+                if transaction.transaction_id == transaction_id:
+                    transaction.mark_cancelled("Отменено пользователем")
+                    queue.remove(transaction)
+                    return transaction
+
+        return None
+
+class TransactionProcessor:
+    def __init__(self, bank):
+        self.bank = bank
+        self.retry_limit = 3
+        self.failed_transactions = []
+
+    def process_transaction(self, transaction: Transaction):
+        try:
+            transaction.mark_processing()
+
+            if transaction.transaction_type != TransactionType.TRANSFER:
+                raise ValueError("Сейчас поддерживаются только переводы")
+
+            sender = transaction.sender
+            receiver = transaction.receiver
+
+            if sender is None or receiver is None:
+                raise ValueError("Для перевода нужны отправитель и получатель")
+
+            if sender.status == AccountStatus.FROZEN or receiver.status == AccountStatus.FROZEN:
+                raise ValueError("Переводы с замороженными счетами запрещены")
+
+            transaction.fee = self.calculate_fee(transaction)
+
+            total_amount = transaction.amount + transaction.fee
+
+            if sender.__class__.__name__ != "PremiumAccount" and sender._balance < total_amount:
+                raise ValueError("Недостаточно средств для перевода")
+
+            sender.withdraw(total_amount)
+
+            received_amount = self.convert_currency(
+                transaction.amount,
+                transaction.currency,
+                receiver.currency
+            )
+
+            receiver.deposit(received_amount)
+
+            transaction.mark_completed()
+            return transaction
+
+        except Exception as error:
+            transaction.mark_failed(str(error))
+            if transaction not in self.failed_transactions:
+                self.failed_transactions.append(transaction)
+            return transaction
+
+
+    def calculate_fee(self, transaction: Transaction):
+        sender = transaction.sender
+        receiver = transaction.receiver
+
+        if sender is None or receiver is None:
+            return 0.0
+
+        if sender.owner != receiver.owner:
+            return round(transaction.amount * 0.02, 2)
+
+        return 0.0
+
+    def convert_currency(self, amount: float, from_currency: Currency, to_currency: Currency):
+        if from_currency == to_currency:
+            return amount
+
+        rates_to_usd = {
+            Currency.USD: 1.0,
+            Currency.EUR: 1.08,
+            Currency.RUB: 0.011,
+            Currency.KZT: 0.0021,
+            Currency.CNY: 0.14,
+        }
+
+        amount_in_usd = amount * rates_to_usd[from_currency]
+        converted_amount = amount_in_usd / rates_to_usd[to_currency]
+        return round(converted_amount, 2)
+
+    def process_with_retry(self, transaction: Transaction):
+        last_error = None
+
+        for _ in range(self.retry_limit):
+            result = self.process_transaction(transaction)
+
+            if result.status == TransactionStatus.COMPLETED:
+                return result
+
+            last_error = result.failure_reason
+
+        transaction.mark_failed(f"Транзакция не выполнена после {self.retry_limit} попыток: {last_error}")
+        if transaction not in self.failed_transactions:
+            self.failed_transactions.append(transaction)
+
+        return transaction
