@@ -89,18 +89,19 @@ class RiskAnalyzer:
         self.transaction_history.append(transaction)
 
         if risk_level in (RiskLevel.MEDIUM, RiskLevel.HIGH):
-            self.suspicious_transactions.append({
-                "transaction": transaction,
-                "risk_level": risk_level,
-                "risk_score": risk_score,
-                "reasons": reasons
-            })
 
-        return {
-            "risk_level": risk_level,
-            "risk_score": risk_score,
-            "reasons": reasons
-        }
+            already_exists = any(
+                item["transaction"].transaction_id == transaction.transaction_id
+                for item in self.suspicious_transactions
+            )
+
+            if risk_level in (RiskLevel.MEDIUM, RiskLevel.HIGH) and not already_exists:
+                self.suspicious_transactions.append({
+                    "transaction": transaction,
+                    "risk_level": risk_level,
+                    "risk_score": risk_score,
+                    "reasons": reasons
+                })
 
     def get_suspicious_operations_report(self):
         return self.suspicious_transactions
