@@ -33,6 +33,7 @@ class AuditLog:
 
 
 class RiskAnalyzer:
+
     def __init__(self):
         self.transaction_history = []
         self.known_receivers = {}
@@ -41,7 +42,6 @@ class RiskAnalyzer:
     def analyze_transaction(self, transaction):
         risk_score = 0
         reasons = []
-
 
         if transaction.amount >= 5000:
             risk_score += 2
@@ -78,17 +78,15 @@ class RiskAnalyzer:
                 reasons.append("Перевод на новый счет")
                 self.known_receivers[sender_id].add(receiver_id)
 
-        # Level
-        if risk_score >= 5:
-            risk_level = RiskLevel.HIGH
-        elif risk_score >= 3:
-            risk_level = RiskLevel.MEDIUM
-        else:
-            risk_level = RiskLevel.LOW
+            # Level
+            if risk_score >= 5:
+                risk_level = RiskLevel.HIGH
+            elif risk_score >= 3:
+                risk_level = RiskLevel.MEDIUM
+            else:
+                risk_level = RiskLevel.LOW
 
-        self.transaction_history.append(transaction)
-
-        if risk_level in (RiskLevel.MEDIUM, RiskLevel.HIGH):
+            self.transaction_history.append(transaction)
 
             already_exists = any(
                 item["transaction"].transaction_id == transaction.transaction_id
@@ -102,6 +100,12 @@ class RiskAnalyzer:
                     "risk_score": risk_score,
                     "reasons": reasons
                 })
+
+            return {
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "reasons": reasons
+            }
 
     def get_suspicious_operations_report(self):
         return self.suspicious_transactions
