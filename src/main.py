@@ -1,7 +1,7 @@
-from bank_system import Client, Bank
+from bank_system import Bank, Client
 from account_types import SavingsAccount, PremiumAccount, InvestmentAccount
-from enums import Currency
-from exceptions import AccountFrozenError
+from enums import Currency, TransactionType
+from transactions import Transaction, TransactionQueue, TransactionProcessor
 
 
 def main():
@@ -26,112 +26,116 @@ def main():
         contacts={"phone": "+77007778899", "email": "maria@mail.com"}
     )
 
-    # Добавляем клиентов в банк
     bank.add_client(client1)
     bank.add_client(client2)
     bank.add_client(client3)
 
-    print("=== КЛИЕНТЫ ДОБАВЛЕНЫ В БАНК ===")
-    print(client1)
-    print(client2)
-    print(client3)
-    print()
-
     # Создаем счета
-    savings_account = SavingsAccount(
+    acc1 = SavingsAccount(
         owner=client1.full_name,
-        balance=3000,
+        balance=5000,
         currency=Currency.USD,
         min_balance=500,
         interest_rate=0.02
     )
 
-    premium_account = PremiumAccount(
+    acc2 = PremiumAccount(
         owner=client2.full_name,
-        balance=1000,
+        balance=2000,
         currency=Currency.EUR,
-        overdraft_limit=2000,
+        overdraft_limit=3000,
         transaction_fee=20
     )
 
-    investment_account = InvestmentAccount(
+    acc3 = InvestmentAccount(
         owner=client3.full_name,
-        balance=5000,
-        portfolio={
-            "stocks": 10000,
-            "bonds": 4000,
-            "etf": 6000
-        }
+        balance=7000,
+        currency=Currency.USD,
+        portfolio={"stocks": 10000, "bonds": 4000, "etf": 3000}
     )
 
-    # Открываем счета в банке
-    bank.open_account(client1.client_id, savings_account)
-    bank.open_account(client2.client_id, premium_account)
-    bank.open_account(client3.client_id, investment_account)
+    acc4 = SavingsAccount(
+        owner=client1.full_name,
+        balance=1500,
+        currency=Currency.KZT,
+        min_balance=200,
+        interest_rate=0.01
+    )
 
-    print("=== СЧЕТА ОТКРЫТЫ ===")
-    print(savings_account)
-    print(premium_account)
-    print(investment_account)
+    bank.open_account(client1.client_id, acc1)
+    bank.open_account(client2.client_id, acc2)
+    bank.open_account(client3.client_id, acc3)
+    bank.open_account(client1.client_id, acc4)
+
+    # Создаем очередь и процессор
+    queue = TransactionQueue()
+    processor = TransactionProcessor(bank)
+
+    # Создаем 10 транзакций
+    transactions = [
+        Transaction(TransactionType.TRANSFER, 300, Currency.USD, sender=acc1, receiver=acc3),
+        Transaction(TransactionType.TRANSFER, 250, Currency.EUR, sender=acc2, receiver=acc1),
+        Transaction(TransactionType.TRANSFER, 100, Currency.USD, sender=acc3, receiver=acc2),
+        Transaction(TransactionType.TRANSFER, 1200, Currency.USD, sender=acc1, receiver=acc2),
+        Transaction(TransactionType.TRANSFER, 500, Currency.KZT, sender=acc4, receiver=acc1),
+        Transaction(TransactionType.TRANSFER, 200, Currency.USD, sender=acc3, receiver=acc4),
+        Transaction(TransactionType.TRANSFER, 50, Currency.EUR, sender=acc2, receiver=acc3),
+        Transaction(TransactionType.TRANSFER, 9000, Currency.USD, sender=acc1, receiver=acc3),   # должен провалиться
+        Transaction(TransactionType.TRANSFER, 400, Currency.USD, sender=acc3, receiver=acc1),
+        Transaction(TransactionType.TRANSFER, 150, Currency.KZT, sender=acc4, receiver=acc2),
+    ]
+
+    # Добавляем транзакции в очередь
+    queue.add_transaction(transactions[0], priority=True)
+    queue.add_transaction(transactions[1])
+    queue.add_transaction(transactions[2])
+    queue.add_transaction(transactions[3], priority=True)
+    queue.add_transaction(transactions[4])
+    queue.add_transaction(transactions[5], delayed=True)
+    queue.add_transaction(transactions[6])
+    queue.add_transaction(transactions[7])
+    queue.add_transaction(transactions[8], priority=True)
+    queue.add_transaction(transactions[9])
+
+    print("=== НАЧАЛЬНЫЕ БАЛАНСЫ ===")
+    print(acc1)
+    print(acc2)
+    print(acc3)
+    print(acc4)
     print()
 
-    # Проверка поиска счетов клиента
-    print("=== СЧЕТА КЛИЕНТА Dias Flow ===")
-    for account in bank.search_accounts(client1.client_id):
-        print(account)
+    print("=== ОБРАБОТКА ОЧЕРЕДИ ТРАНЗАКЦИЙ ===")
+    processed_transactions = []
+
+    while True:
+        transaction = queue.get_next_transaction()
+        if transaction is None:
+            break
+
+        result = processor.process_with_retry(transaction)
+        processed_transactions.append(result)
+        print(result)
+        if result.failure_reason:
+            print("Причина ошибки:", result.failure_reason)
+        print()
+
+    print("=== ОТЛОЖЕННЫЕ ТРАНЗАКЦИИ ===")
+    for delayed_transaction in queue.delayed_queue:
+        print(delayed_transaction)
     print()
 
-    # Проверка успешной аутентификации
-    print("=== УСПЕШНАЯ АУТЕНТИФИКАЦИЯ ===")
-    authenticated_client = bank.authenticate_client(client1.client_id)
-    print("Вход выполнен:", authenticated_client)
+    print("=== ИТОГОВЫЕ БАЛАНСЫ ===")
+    print(acc1)
+    print(acc2)
+    print(acc3)
+    print(acc4)
     print()
 
-    # Проверка неудачных попыток входа
-    print("=== НЕУДАЧНЫЕ ПОПЫТКИ ВХОДА ===")
-    fake_id = "wrong123"
-
-    for attempt in range(1, 4):
-        try:
-            bank.authenticate_client(fake_id)
-        except ValueError as e:
-            print(f"Попытка {attempt}: {e}")
-
-    print("Заблокированные клиенты:", bank.blocked_clients)
-    print()
-
-    # Заморозка счета
-    print("=== ЗАМОРОЗКА СЧЕТА ===")
-    bank.freeze_account(savings_account.account_id)
-    print("Статус счета после заморозки:", savings_account.status.value)
-
-    try:
-        savings_account.deposit(100)
-    except AccountFrozenError as e:
-        print("Ошибка операции:", e)
-    print()
-
-    # Разморозка счета
-    print("=== РАЗМОРОЗКА СЧЕТА ===")
-    bank.unfreeze_account(savings_account.account_id)
-    print("Статус счета после разморозки:", savings_account.status.value)
-    savings_account.deposit(100)
-    print("После пополнения:", savings_account)
-    print()
-
-    # Аналитика банка
-    print("=== ОБЩИЙ БАЛАНС БАНКА ===")
-    print(bank.get_total_balance())
-    print()
-
-    print("=== РЕЙТИНГ КЛИЕНТОВ ===")
-    for full_name, total_balance in bank.get_clients_ranking():
-        print(f"{full_name}: {total_balance:.2f}")
-    print()
-
-    print("=== ПОДОЗРИТЕЛЬНЫЕ ДЕЙСТВИЯ ===")
-    for action in bank.suspicious_actions:
-        print(action)
+    print("=== НЕУДАЧНЫЕ ТРАНЗАКЦИИ ===")
+    for failed_transaction in processor.failed_transactions:
+        print(failed_transaction)
+        print("Причина:", failed_transaction.failure_reason)
+        print()
 
 
 if __name__ == "__main__":
