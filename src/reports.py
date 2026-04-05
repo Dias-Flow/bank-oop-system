@@ -11,16 +11,18 @@ from enums import TransactionStatus, RiskLevel
 
 class ReportBuilder:
     def __init__(
-        self,
-        bank: Bank,
-        processor: TransactionProcessor,
-        risk_analyzer: RiskAnalyzer,
-        audit_log: AuditLog
+            self,
+            bank: Bank,
+            processor: TransactionProcessor,
+            risk_analyzer: RiskAnalyzer,
+            audit_log: AuditLog,
+            processed_transactions: list
     ):
         self.bank = bank
         self.processor = processor
         self.risk_analyzer = risk_analyzer
         self.audit_log = audit_log
+        self.processed_transactions = processed_transactions
 
         self.output_dir = "reports_output"
         self.charts_dir = os.path.join(self.output_dir, "charts")
@@ -59,7 +61,7 @@ class ReportBuilder:
         client_transactions = []
         suspicious_operations = []
 
-        for transaction in self.processor.processed_transactions:
+        for transaction in self.processed_transactions:
             if self._transaction_belongs_to_client(transaction, client_account_ids):
                 client_transactions.append(transaction)
 
@@ -112,11 +114,12 @@ class ReportBuilder:
         return report
 
     def build_bank_report(self):
-        clients_count = len(self.bank.clients)
+        clients = self._get_all_clients()
+        clients_count = len(clients)
         accounts_count = len(self.bank.accounts)
         total_balance = self.bank.get_total_balance()
 
-        processed_transactions = self.processor.processed_transactions
+        processed_transactions = self.processed_transactions
         total_transactions = len(processed_transactions)
 
         completed_transactions = sum(
@@ -146,6 +149,11 @@ class ReportBuilder:
         }
 
         return report
+
+    def _get_all_clients(self):
+        if isinstance(self.bank.clients, dict):
+            return list(self.bank.clients.values())
+        return list(self.bank.clients)
 
     def build_risk_report(self):
         suspicious_operations = self.risk_analyzer.get_suspicious_operations_report()
@@ -264,7 +272,7 @@ class ReportBuilder:
                 writer.writerow([data])
 
     def create_transactions_pie_chart(self):
-        processed_transactions = self.processor.processed_transactions
+        processed_transactions = self.processed_transactions
 
         completed_transactions = sum(
             1 for transaction in processed_transactions
@@ -303,7 +311,7 @@ class ReportBuilder:
     def create_top_clients_chart(self):
         clients_data = []
 
-        for client in self.bank.clients:
+        for client in self._get_all_clients():
             accounts = self._get_client_accounts(client)
             total_balance = sum(account._balance for account in accounts)
 
@@ -346,7 +354,7 @@ class ReportBuilder:
 
         relevant_transactions = [
             transaction
-            for transaction in self.processor.processed_transactions
+            for transaction in self.processed_transactions
             if (
                     transaction.status == TransactionStatus.COMPLETED
                     and self._transaction_belongs_to_client(transaction, client_account_ids)

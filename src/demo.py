@@ -3,6 +3,7 @@ from account_types import SavingsAccount, PremiumAccount, InvestmentAccount
 from enums import Currency, TransactionType, TransactionStatus, AuditLevel
 from transactions import Transaction, TransactionQueue, TransactionProcessor
 from audit import AuditLog, RiskAnalyzer
+from reports import ReportBuilder
 
 
 def create_bank_system():
@@ -425,6 +426,35 @@ def main():
         processed_transactions=processed_transactions
     )
 
+    report_builder = ReportBuilder(
+        bank=bank,
+        processor=processor,
+        risk_analyzer=risk_analyzer,
+        audit_log=audit_log,
+        processed_transactions=processed_transactions
+    )
+
+    client_report = report_builder.build_client_report(clients[0])
+    bank_report = report_builder.build_bank_report()
+    risk_report = report_builder.build_risk_report()
+
+    report_builder.export_to_json(client_report, "client_report.json")
+    report_builder.export_to_json(bank_report, "bank_report.json")
+    report_builder.export_to_json(risk_report, "risk_report.json")
+
+    report_builder.export_to_csv(client_report, "client_report.csv")
+    report_builder.export_to_csv(bank_report, "bank_report.csv")
+    report_builder.export_to_csv(risk_report, "risk_report.csv")
+
+    report_builder.export_to_csv(client_report["accounts"], "client_accounts.csv")
+    report_builder.export_to_csv(client_report["suspicious_operations"], "client_suspicious_operations.csv")
+    report_builder.export_to_csv(risk_report["operations"], "risk_operations.csv")
+
+    report_builder.save_charts(clients[0])
+
+    print("=== DAY 7 REPORTS ===")
+    print("Отчёты и графики сохранены в папку reports_output")
+    print()
+
 if __name__ == "__main__":
     main()
-

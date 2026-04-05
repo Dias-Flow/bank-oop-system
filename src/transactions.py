@@ -118,6 +118,7 @@ class TransactionQueue:
 class TransactionProcessor:
 
     def __init__(self, bank, audit_log=None, risk_analyzer=None):
+        self.processed_transactions = None
         self.bank = bank
         self.retry_limit = 3
         self.failed_transactions = []
