@@ -74,6 +74,7 @@ class Transaction:
             f"status: {self.status.value}"
         )
 
+
 class TransactionQueue:
     def __init__(self):
         self.priority_queue = []
@@ -105,6 +106,16 @@ class TransactionQueue:
 
         return None
 
+    # [ИСПРАВЛЕНИЕ #2] Новый метод: перемещает отложенные транзакции
+    # в обычную очередь для последующей обработки.
+    # Ранее delayed_queue только накапливался и никогда не исполнялся.
+    def release_delayed(self):
+        """Переместить все отложенные транзакции в обычную очередь."""
+        released = list(self.delayed_queue)
+        self.regular_queue.extend(released)
+        self.delayed_queue.clear()
+        return released
+
     def cancel_transaction(self, transaction_id: str):
         for queue in [self.priority_queue, self.regular_queue, self.delayed_queue]:
             for transaction in queue:
@@ -114,6 +125,7 @@ class TransactionQueue:
                     return transaction
 
         return None
+
 
 class TransactionProcessor:
 
@@ -128,6 +140,10 @@ class TransactionProcessor:
     def process_transaction(self, transaction: Transaction):
         try:
             transaction.mark_processing()
+
+            # [ИСПРАВЛЕНИЕ #3] Проверка ночного запрета до любых операций.
+            # Ранее _check_operation_time() существовал в Bank, но нигде не вызывался.
+            self.bank._check_operation_time()
 
             risk_result = self.risk_analyzer.analyze_transaction(transaction)
             risk_level = risk_result["risk_level"]
@@ -176,15 +192,28 @@ class TransactionProcessor:
             if sender.__class__.__name__ != "PremiumAccount" and sender._balance < total_amount:
                 raise ValueError("Недостаточно средств для перевода")
 
-            sender.withdraw(total_amount)
+            # [ИСПРАВЛЕНИЕ #1] Атомарность перевода: сохраняем балансы до операции.
+            # Ранее sender.withdraw() вызывался до receiver.deposit(),
+            # и при ошибке после списания деньги терялись навсегда.
+            sender_balance_snapshot = sender._balance
+            receiver_balance_snapshot = receiver._balance
 
-            received_amount = self.convert_currency(
-                transaction.amount,
-                transaction.currency,
-                receiver.currency
-            )
+            try:
+                sender.withdraw(total_amount)
 
-            receiver.deposit(received_amount)
+                received_amount = self.convert_currency(
+                    transaction.amount,
+                    transaction.currency,
+                    receiver.currency
+                )
+
+                receiver.deposit(received_amount)
+
+            except Exception as inner_error:
+                # Откатываем балансы к состоянию до начала перевода
+                sender._balance = sender_balance_snapshot
+                receiver._balance = receiver_balance_snapshot
+                raise inner_error
 
             transaction.mark_completed()
 
@@ -207,7 +236,6 @@ class TransactionProcessor:
             )
 
             return transaction
-
 
     def calculate_fee(self, transaction: Transaction):
         sender = transaction.sender

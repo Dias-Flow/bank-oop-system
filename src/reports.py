@@ -3,7 +3,7 @@ import csv
 import os
 import matplotlib.pyplot as plt
 
-from bank_system import Bank
+from bank_system import Bank, convert_balance_to_usd
 from transactions import TransactionProcessor
 from audit import AuditLog, RiskAnalyzer
 from enums import TransactionStatus, RiskLevel
@@ -56,7 +56,13 @@ class ReportBuilder:
     def build_client_report(self, client):
         accounts = self._get_client_accounts(client)
         client_account_ids = {account.account_id for account in accounts}
-        total_balance = sum(account._balance for account in accounts)
+
+        # [ИСПРАВЛЕНИЕ #4] Суммируем балансы клиента в USD для корректного итога.
+        # Ранее складывались числа из разных валют без конвертации.
+        total_balance_usd = sum(
+            convert_balance_to_usd(account._balance, account.currency)
+            for account in accounts
+        )
 
         client_transactions = []
         suspicious_operations = []
@@ -92,7 +98,8 @@ class ReportBuilder:
             "client_name": client.full_name,
             "client_id": client.client_id,
             "accounts_count": len(accounts),
-            "total_balance": total_balance,
+            # total_balance теперь в USD (нормализованный)
+            "total_balance_usd": round(total_balance_usd, 2),
             "transactions": {
                 "total": len(client_transactions),
                 "completed": completed_transactions,
@@ -103,6 +110,7 @@ class ReportBuilder:
                     "account_id": account.account_id,
                     "currency": account.currency.value,
                     "balance": account._balance,
+                    "balance_usd": round(convert_balance_to_usd(account._balance, account.currency), 2),
                     "status": account.status.value,
                 }
                 for account in accounts
@@ -117,7 +125,9 @@ class ReportBuilder:
         clients = self._get_all_clients()
         clients_count = len(clients)
         accounts_count = len(self.bank.accounts)
-        total_balance = self.bank.get_total_balance()
+
+        # [ИСПРАВЛЕНИЕ #4] get_total_balance() теперь возвращает сумму в USD
+        total_balance_usd = self.bank.get_total_balance()
 
         processed_transactions = self.processed_transactions
         total_transactions = len(processed_transactions)
@@ -139,7 +149,8 @@ class ReportBuilder:
             "bank_name": self.bank.name,
             "clients_count": clients_count,
             "accounts_count": accounts_count,
-            "total_balance": total_balance,
+            # total_balance в USD (нормализованный)
+            "total_balance_usd": total_balance_usd,
             "transactions": {
                 "total": total_transactions,
                 "completed": completed_transactions,
@@ -313,30 +324,35 @@ class ReportBuilder:
 
         for client in self._get_all_clients():
             accounts = self._get_client_accounts(client)
-            total_balance = sum(account._balance for account in accounts)
+
+            # [ИСПРАВЛЕНИЕ #4] Нормализуем балансы в USD для корректного графика.
+            total_balance_usd = sum(
+                convert_balance_to_usd(account._balance, account.currency)
+                for account in accounts
+            )
 
             clients_data.append(
                 {
                     "client_name": client.full_name,
-                    "total_balance": total_balance,
+                    "total_balance_usd": round(total_balance_usd, 2),
                 }
             )
 
         if not clients_data:
             return
 
-        clients_data.sort(key=lambda item: item["total_balance"], reverse=True)
+        clients_data.sort(key=lambda item: item["total_balance_usd"], reverse=True)
         top_clients = clients_data[:10]
 
         names = [item["client_name"] for item in top_clients]
-        balances = [item["total_balance"] for item in top_clients]
+        balances = [item["total_balance_usd"] for item in top_clients]
 
         plt.figure(figsize=(10, 6))
         plt.bar(names, balances)
         plt.xticks(rotation=45, ha="right")
-        plt.title("Top Clients by Balance")
+        plt.title("Top Clients by Balance (USD equivalent)")
         plt.xlabel("Clients")
-        plt.ylabel("Balance")
+        plt.ylabel("Balance (USD)")
 
         path = os.path.join(self.charts_dir, "top_clients_bar.png")
         plt.tight_layout()
@@ -350,7 +366,11 @@ class ReportBuilder:
         if not client_account_ids:
             return
 
-        current_total_balance = sum(account._balance for account in accounts)
+        # [ИСПРАВЛЕНИЕ #4] Текущий суммарный баланс в USD
+        current_total_balance = sum(
+            convert_balance_to_usd(account._balance, account.currency)
+            for account in accounts
+        )
 
         relevant_transactions = [
             transaction
@@ -374,13 +394,13 @@ class ReportBuilder:
                     transaction.receiver is not None
                     and transaction.receiver.account_id in client_account_ids
             ):
-                running_balance -= transaction.amount
+                running_balance -= convert_balance_to_usd(transaction.amount, transaction.currency)
 
             if (
                     transaction.sender is not None
                     and transaction.sender.account_id in client_account_ids
             ):
-                running_balance += transaction.amount
+                running_balance += convert_balance_to_usd(transaction.amount, transaction.currency)
 
             balance_history.append(running_balance)
             labels.append(f"Step {index}")
@@ -391,9 +411,9 @@ class ReportBuilder:
         plt.figure(figsize=(10, 6))
         plt.plot(labels, balance_history, marker="o")
         plt.xticks(rotation=45, ha="right")
-        plt.title(f"Balance Movement - {client.full_name}")
+        plt.title(f"Balance Movement (USD) - {client.full_name}")
         plt.xlabel("Operations")
-        plt.ylabel("Balance")
+        plt.ylabel("Balance (USD)")
 
         path = os.path.join(self.charts_dir, f"{client.client_id}_balance_history.png")
         plt.tight_layout()
