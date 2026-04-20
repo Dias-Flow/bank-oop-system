@@ -2,8 +2,24 @@ from uuid import uuid4
 
 from accounts import BankAccount
 from account_types import SavingsAccount, PremiumAccount, InvestmentAccount
-from enums import AccountStatus
+from enums import AccountStatus, Currency
 from datetime import datetime
+
+
+# [ИСПРАВЛЕНИЕ #4] Таблица курсов к USD вынесена на уровень модуля,
+# чтобы bank_system и reports использовали единый источник курсов.
+RATES_TO_USD = {
+    Currency.USD: 1.0,
+    Currency.EUR: 1.08,
+    Currency.RUB: 0.011,
+    Currency.KZT: 0.0021,
+    Currency.CNY: 0.14,
+}
+
+
+def convert_balance_to_usd(balance: float, currency: Currency) -> float:
+    """Нормализовать баланс в USD для корректного сравнения мультивалютных счетов."""
+    return balance * RATES_TO_USD.get(currency, 1.0)
 
 
 class Client:
@@ -51,6 +67,7 @@ class Client:
             f"Client | {self.full_name} | ID: {self.client_id} | "
             f"status: {self.status} | accounts: {len(self.accounts)}"
         )
+
 
 class Bank:
     def __init__(self, name: str):
@@ -119,7 +136,6 @@ class Bank:
         account = self.accounts[account_id]
         account.status = AccountStatus.ACTIVE
 
-
     def authenticate_client(self, client_id: str):
         if client_id in self.blocked_clients:
             raise ValueError("Клиент заблокирован")
@@ -151,24 +167,29 @@ class Bank:
         ]
 
     def get_total_balance(self):
-        total = 0.0
+        # [ИСПРАВЛЕНИЕ #4] Суммируем балансы через нормализацию в USD.
+        # Ранее складывались числа в разных валютах (USD + EUR + KZT...) — математически бессмысленно.
+        total_usd = 0.0
 
         for account in self.accounts.values():
-            total += account._balance
+            total_usd += convert_balance_to_usd(account._balance, account.currency)
 
-        return total
+        return round(total_usd, 2)
 
     def get_clients_ranking(self):
+        # [ИСПРАВЛЕНИЕ #4] Рейтинг клиентов теперь строится по балансу в USD,
+        # а не по сумме разнородных валют.
         ranking = []
 
         for client in self.clients.values():
-            total_balance = 0.0
+            total_balance_usd = 0.0
 
             for account_id in client.get_accounts():
                 if account_id in self.accounts:
-                    total_balance += self.accounts[account_id]._balance
+                    account = self.accounts[account_id]
+                    total_balance_usd += convert_balance_to_usd(account._balance, account.currency)
 
-            ranking.append((client.full_name, total_balance))
+            ranking.append((client.full_name, round(total_balance_usd, 2)))
 
         ranking.sort(key=lambda item: item[1], reverse=True)
         return ranking

@@ -125,10 +125,26 @@ def main():
             print("Причина:", result.failure_reason)
         print()
 
-    print("=== ОТЛОЖЕННЫЕ ТРАНЗАКЦИИ ===")
-    for delayed_transaction in queue.delayed_queue:
-        print(delayed_transaction)
+    # [ИСПРАВЛЕНИЕ #2] Обработка отложенных транзакций.
+    # Ранее delayed_queue только печатался, но транзакции так и не исполнялись.
+    # Теперь release_delayed() перемещает их в обычную очередь и они обрабатываются.
+    print("=== ОБРАБОТКА ОТЛОЖЕННЫХ ТРАНЗАКЦИЙ ===")
+    released = queue.release_delayed()
+    print(f"Освобождено отложенных транзакций: {len(released)}")
     print()
+
+    while True:
+        transaction = queue.get_next_transaction()
+        if transaction is None:
+            break
+
+        result = processor.process_with_retry(transaction)
+        processed_transactions.append(result)
+
+        print(result)
+        if result.failure_reason:
+            print("Причина:", result.failure_reason)
+        print()
 
     print("=== ИТОГОВЫЕ БАЛАНСЫ ===")
     print(acc1)
