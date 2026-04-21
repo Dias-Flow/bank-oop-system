@@ -409,9 +409,13 @@ def main():
     processed_transactions = process_all_transactions(queue, processor)
     print()
 
-    print("=== ОТЛОЖЕННЫЕ ТРАНЗАКЦИИ ===")
-    for delayed_transaction in queue.delayed_queue:
-        print(delayed_transaction)
+    # [ИСПРАВЛЕНИЕ] Отложенные транзакции теперь реально исполняются.
+    # Ранее delayed_queue просто печатался без обработки.
+    print("=== ОБРАБОТКА ОТЛОЖЕННЫХ ТРАНЗАКЦИЙ ===")
+    released = queue.release_delayed()
+    print(f"Освобождено отложенных транзакций: {len(released)}")
+    delayed_results = process_all_transactions(queue, processor)
+    processed_transactions.extend(delayed_results)
     print()
 
     show_client_accounts(bank, clients[0])
