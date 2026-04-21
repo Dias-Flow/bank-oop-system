@@ -2,6 +2,7 @@ from accounts import BankAccount
 from enums import AccountStatus, Currency
 from exceptions import InsufficientFundsError
 
+
 class SavingsAccount(BankAccount):
     def __init__(
         self,
@@ -41,9 +42,29 @@ class SavingsAccount(BankAccount):
 
         self._balance -= amount
 
+    # [ИСПРАВЛЕНИЕ] Добавлен get_account_info — ранее метод не был переопределён,
+    # поэтому min_balance и interest_rate терялись при вызове get_account_info().
+    def get_account_info(self):
+        info = super().get_account_info()
+        info["min_balance"] = self.min_balance
+        info["interest_rate"] = self.interest_rate
+        info["account_type"] = "SavingsAccount"
+        return info
+
+    # [ИСПРАВЛЕНИЕ] Добавлен __str__ — ранее объект выводился как BankAccount
+    # без информации о типе счёта, min_balance и interest_rate.
+    def __str__(self):
+        last_four = self.account_id[-4:]
+        return (
+            f"SavingsAccount | {self.owner} | ****{last_four} | "
+            f"{self.status.value} | {self._balance:.2f} {self.currency.value} | "
+            f"min_balance={self.min_balance:.2f} | rate={self.interest_rate:.4f}"
+        )
+
     def apply_monthly_interest(self):
         interest = self._balance * self.interest_rate
         self._balance += interest
+
 
 class PremiumAccount(BankAccount):
     def __init__(
@@ -100,6 +121,7 @@ class PremiumAccount(BankAccount):
             f"{self.status.value} | {self._balance:.2f} {self.currency.value} | "
             f"overdraft={self.overdraft_limit:.2f} | fee={self.transaction_fee:.2f}"
         )
+
 
 class InvestmentAccount(BankAccount):
     def __init__(

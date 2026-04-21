@@ -45,20 +45,16 @@ class ReportBuilder:
             transaction.sender is not None
             and transaction.sender.account_id in client_account_ids
         )
-
         receiver_match = (
             transaction.receiver is not None
             and transaction.receiver.account_id in client_account_ids
         )
-
         return sender_match or receiver_match
 
     def build_client_report(self, client):
         accounts = self._get_client_accounts(client)
         client_account_ids = {account.account_id for account in accounts}
 
-        # [ИСПРАВЛЕНИЕ #4] Суммируем балансы клиента в USD для корректного итога.
-        # Ранее складывались числа из разных валют без конвертации.
         total_balance_usd = sum(
             convert_balance_to_usd(account._balance, account.currency)
             for account in accounts
@@ -73,7 +69,6 @@ class ReportBuilder:
 
         for item in self.risk_analyzer.get_suspicious_operations_report():
             transaction = item["transaction"]
-
             if self._transaction_belongs_to_client(transaction, client_account_ids):
                 suspicious_operations.append(
                     {
@@ -88,7 +83,6 @@ class ReportBuilder:
             1 for transaction in client_transactions
             if transaction.status == TransactionStatus.COMPLETED
         )
-
         failed_transactions = sum(
             1 for transaction in client_transactions
             if transaction.status == TransactionStatus.FAILED
@@ -98,7 +92,6 @@ class ReportBuilder:
             "client_name": client.full_name,
             "client_id": client.client_id,
             "accounts_count": len(accounts),
-            # total_balance теперь в USD (нормализованный)
             "total_balance_usd": round(total_balance_usd, 2),
             "transactions": {
                 "total": len(client_transactions),
@@ -125,8 +118,6 @@ class ReportBuilder:
         clients = self._get_all_clients()
         clients_count = len(clients)
         accounts_count = len(self.bank.accounts)
-
-        # [ИСПРАВЛЕНИЕ #4] get_total_balance() теперь возвращает сумму в USD
         total_balance_usd = self.bank.get_total_balance()
 
         processed_transactions = self.processed_transactions
@@ -136,7 +127,6 @@ class ReportBuilder:
             1 for transaction in processed_transactions
             if transaction.status == TransactionStatus.COMPLETED
         )
-
         failed_transactions = sum(
             1 for transaction in processed_transactions
             if transaction.status == TransactionStatus.FAILED
@@ -149,7 +139,6 @@ class ReportBuilder:
             "bank_name": self.bank.name,
             "clients_count": clients_count,
             "accounts_count": accounts_count,
-            # total_balance в USD (нормализованный)
             "total_balance_usd": total_balance_usd,
             "transactions": {
                 "total": total_transactions,
@@ -169,14 +158,8 @@ class ReportBuilder:
     def build_risk_report(self):
         suspicious_operations = self.risk_analyzer.get_suspicious_operations_report()
 
-        risk_levels = {
-            "low": 0,
-            "medium": 0,
-            "high": 0,
-        }
-
+        risk_levels = {"low": 0, "medium": 0, "high": 0}
         reasons_statistics = {}
-
         operations = []
 
         for item in suspicious_operations:
@@ -198,14 +181,10 @@ class ReportBuilder:
                 {
                     "transaction_id": transaction.transaction_id,
                     "sender_account_id": (
-                        transaction.sender.account_id
-                        if transaction.sender is not None
-                        else None
+                        transaction.sender.account_id if transaction.sender is not None else None
                     ),
                     "receiver_account_id": (
-                        transaction.receiver.account_id
-                        if transaction.receiver is not None
-                        else None
+                        transaction.receiver.account_id if transaction.receiver is not None else None
                     ),
                     "amount": transaction.amount,
                     "risk_level": risk_level.value,
@@ -214,69 +193,52 @@ class ReportBuilder:
                 }
             )
 
-        report = {
+        return {
             "total_suspicious": len(suspicious_operations),
             "risk_levels": risk_levels,
             "reasons_statistics": reasons_statistics,
             "operations": operations,
         }
 
-        return report
-
     def _flatten_dict(self, data, parent_key="", sep="."):
         items = {}
-
         for key, value in data.items():
             new_key = f"{parent_key}{sep}{key}" if parent_key else key
-
             if isinstance(value, dict):
                 items.update(self._flatten_dict(value, new_key, sep=sep))
             elif isinstance(value, list):
                 items[new_key] = json.dumps(value, ensure_ascii=False)
             else:
                 items[new_key] = value
-
         return items
 
     def export_to_json(self, data, filename):
         path = os.path.join(self.output_dir, filename)
-
         with open(path, "w", encoding="utf-8") as file:
             json.dump(data, file, indent=4, ensure_ascii=False)
 
     def export_to_csv(self, data, filename):
         path = os.path.join(self.output_dir, filename)
-
         with open(path, "w", newline="", encoding="utf-8") as file:
             if isinstance(data, dict):
                 flattened_data = self._flatten_dict(data)
                 writer = csv.DictWriter(file, fieldnames=flattened_data.keys())
                 writer.writeheader()
                 writer.writerow(flattened_data)
-
             elif isinstance(data, list):
                 if not data:
                     return
-
                 prepared_rows = []
                 all_keys = set()
-
                 for row in data:
-                    if isinstance(row, dict):
-                        flattened_row = self._flatten_dict(row)
-                    else:
-                        flattened_row = {"value": row}
-
+                    flattened_row = self._flatten_dict(row) if isinstance(row, dict) else {"value": row}
                     prepared_rows.append(flattened_row)
                     all_keys.update(flattened_row.keys())
-
                 fieldnames = list(all_keys)
                 writer = csv.DictWriter(file, fieldnames=fieldnames)
                 writer.writeheader()
-
                 for row in prepared_rows:
                     writer.writerow(row)
-
             else:
                 writer = csv.writer(file)
                 writer.writerow(["value"])
@@ -285,26 +247,16 @@ class ReportBuilder:
     def create_transactions_pie_chart(self):
         processed_transactions = self.processed_transactions
 
-        completed_transactions = sum(
-            1 for transaction in processed_transactions
-            if transaction.status == TransactionStatus.COMPLETED
-        )
+        completed = sum(1 for t in processed_transactions if t.status == TransactionStatus.COMPLETED)
+        failed = sum(1 for t in processed_transactions if t.status == TransactionStatus.FAILED)
 
-        failed_transactions = sum(
-            1 for transaction in processed_transactions
-            if transaction.status == TransactionStatus.FAILED
-        )
-
-        labels = []
-        sizes = []
-
-        if completed_transactions > 0:
+        labels, sizes = [], []
+        if completed > 0:
             labels.append("Completed")
-            sizes.append(completed_transactions)
-
-        if failed_transactions > 0:
+            sizes.append(completed)
+        if failed > 0:
             labels.append("Failed")
-            sizes.append(failed_transactions)
+            sizes.append(failed)
 
         if not sizes:
             return
@@ -313,7 +265,6 @@ class ReportBuilder:
         plt.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=90)
         plt.title("Transactions Distribution")
         plt.axis("equal")
-
         path = os.path.join(self.charts_dir, "transactions_pie.png")
         plt.tight_layout()
         plt.savefig(path)
@@ -324,19 +275,11 @@ class ReportBuilder:
 
         for client in self._get_all_clients():
             accounts = self._get_client_accounts(client)
-
-            # [ИСПРАВЛЕНИЕ #4] Нормализуем балансы в USD для корректного графика.
             total_balance_usd = sum(
                 convert_balance_to_usd(account._balance, account.currency)
                 for account in accounts
             )
-
-            clients_data.append(
-                {
-                    "client_name": client.full_name,
-                    "total_balance_usd": round(total_balance_usd, 2),
-                }
-            )
+            clients_data.append({"client_name": client.full_name, "total_balance_usd": round(total_balance_usd, 2)})
 
         if not clients_data:
             return
@@ -353,7 +296,6 @@ class ReportBuilder:
         plt.title("Top Clients by Balance (USD equivalent)")
         plt.xlabel("Clients")
         plt.ylabel("Balance (USD)")
-
         path = os.path.join(self.charts_dir, "top_clients_bar.png")
         plt.tight_layout()
         plt.savefig(path)
@@ -366,7 +308,6 @@ class ReportBuilder:
         if not client_account_ids:
             return
 
-        # [ИСПРАВЛЕНИЕ #4] Текущий суммарный баланс в USD
         current_total_balance = sum(
             convert_balance_to_usd(account._balance, account.currency)
             for account in accounts
@@ -376,8 +317,8 @@ class ReportBuilder:
             transaction
             for transaction in self.processed_transactions
             if (
-                    transaction.status == TransactionStatus.COMPLETED
-                    and self._transaction_belongs_to_client(transaction, client_account_ids)
+                transaction.status == TransactionStatus.COMPLETED
+                and self._transaction_belongs_to_client(transaction, client_account_ids)
             )
         ]
 
@@ -386,21 +327,24 @@ class ReportBuilder:
 
         balance_history = [current_total_balance]
         labels = ["Current balance"]
-
         running_balance = current_total_balance
 
         for index, transaction in enumerate(reversed(relevant_transactions), start=1):
             if (
-                    transaction.receiver is not None
-                    and transaction.receiver.account_id in client_account_ids
+                transaction.receiver is not None
+                and transaction.receiver.account_id in client_account_ids
             ):
                 running_balance -= convert_balance_to_usd(transaction.amount, transaction.currency)
 
             if (
-                    transaction.sender is not None
-                    and transaction.sender.account_id in client_account_ids
+                transaction.sender is not None
+                and transaction.sender.account_id in client_account_ids
             ):
-                running_balance += convert_balance_to_usd(transaction.amount, transaction.currency)
+                # [ИСПРАВЛЕНИЕ] Учитываем комиссию при восстановлении истории баланса.
+                # Ранее прибавлялся только transaction.amount, fee игнорировалась,
+                # что занижало фактическое списание и искажало график.
+                total_outgoing = transaction.amount + transaction.fee
+                running_balance += convert_balance_to_usd(total_outgoing, transaction.currency)
 
             balance_history.append(running_balance)
             labels.append(f"Step {index}")
@@ -414,7 +358,6 @@ class ReportBuilder:
         plt.title(f"Balance Movement (USD) - {client.full_name}")
         plt.xlabel("Operations")
         plt.ylabel("Balance (USD)")
-
         path = os.path.join(self.charts_dir, f"{client.client_id}_balance_history.png")
         plt.tight_layout()
         plt.savefig(path)
